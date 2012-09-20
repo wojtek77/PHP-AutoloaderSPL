@@ -29,6 +29,7 @@ class Autoloader
     const IS_DEBUG = false;
     
     
+    
     /**
      * @var string  nazwa klasy 
      */
@@ -45,10 +46,16 @@ class Autoloader
     static private $prefixFrom;
     
     /**
-     * Licznik dla blednych sciezek do class - uzywane do debugowania
-     * @var int
+     * Uzywane do debugowania
+     * @var int licznik dla blednych sciezek do class
      */
     static private $missingCounter = 0;
+    
+    /**
+     * Uzywane przy bledzie ladowania klasy - pokazywane sa bledne sciezki do ladowania klas 
+     * @var array   tablica obiektow klasy Autoloader w porzadku jak zostaly zaladowane
+     */
+    static private $loaders = array();
     
     
     
@@ -147,6 +154,12 @@ class Autoloader
      */
     private $missingScripts = array();
     
+    /**
+     * Okresla czy dany obiekt jest ostatnim autoloaderem w SPL
+     * @var bool
+     */
+    private $isLastLoaderSPL;
+    
     
     
     /**
@@ -165,6 +178,7 @@ class Autoloader
                 $prefix .= '/';
         }
         $this->prefix = $prefix;
+        self::$loaders[] = $this;
         
         spl_autoload_register(array($this, 'autoload'));
     }
@@ -227,6 +241,21 @@ class Autoloader
         
         $this->stopAutoload[self::$prefixClass] = true;
         $this->missingScripts[] = self::$prefixFrom.$this->prefix.$class;
+        if (!isset($this->isLastLoaderSPL))
+        {
+            if (end(self::$loaders) === $this)
+            {
+                $splLoaders = spl_autoload_functions();
+                $lastSpl = end($splLoaders);
+                if ($lastSpl[0] === $this)
+                {
+                    $this->warningWrongPath($class);
+                    return;
+                }
+            }
+            
+            $this->isLastLoaderSPL = false;
+        }
     }
     
     
@@ -300,5 +329,21 @@ class Autoloader
        return
            ($p === '' ? '' : str_repeat('../', substr_count($p, '/')+1))
            .$path;
+   }
+   
+   /**
+    * Funkcja pokazuje warning na temat niezaladowanych sciezek do klas
+    * @param string $class
+    */
+   private function warningWrongPath($class)
+   {
+       foreach (self::$loaders as $l)
+       {
+           /* @var $l Autoloader */
+           trigger_error(
+                   "Wrong path to class: '".self::$prefixFrom.$l->prefix.$class."'",
+                   E_USER_WARNING
+                   );
+       }
    }
 }
