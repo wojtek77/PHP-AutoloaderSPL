@@ -24,6 +24,12 @@
 class Autoloader
 {
     /**
+     * wlacza debugowanie
+     */
+    const IS_DEBUG = false;
+    
+    
+    /**
      * @var string  nazwa klasy 
      */
     static private $class;
@@ -34,9 +40,15 @@ class Autoloader
     static private $prefixClass;
     
     /**
-     * @var string  sciezka od skryptu PHP do korzenia projektu np. '../', ''
+     * @var string  sciezka od skryptu PHP do korzenia projektu - wyliczana automatycznie
      */
     static private $prefixFrom;
+    
+    /**
+     * Licznik dla blednych sciezek do class - uzywane do debugowania
+     * @var int
+     */
+    static private $missingCounter = 0;
     
     
     
@@ -129,6 +141,12 @@ class Autoloader
      */
     private $stopAutoload = array();
     
+    /**
+     * Tablica przechowujaca bledne sciezki do class - uzywane do debugowania
+     * @var array
+     */
+    private $missingScripts = array();
+    
     
     
     /**
@@ -137,6 +155,8 @@ class Autoloader
      */
     public function __construct($prefix = '')
     {
+        $prefix = (string) $prefix;
+        
         if ($prefix !== '')
         {
             if ($this->isAbsolutePath($prefix))
@@ -147,6 +167,18 @@ class Autoloader
         $this->prefix = $prefix;
         
         spl_autoload_register(array($this, 'autoload'));
+    }
+    
+    public function __destruct()
+    {
+        if (self::IS_DEBUG)
+        {
+            echo 'Prefix class: \''.$this->prefix.'\'<br />';
+            foreach ($this->missingScripts as $m)
+            {
+                echo '<pre>'.print_r(++self::$missingCounter.'. '.$m,true).'</pre>';
+            }
+        }
     }
     
     
@@ -176,6 +208,10 @@ class Autoloader
         }
         else
         {
+            /*
+             * obliczenie "self::$prefixFrom" - to jest robione tylko raz
+             * oblicza sciezka od skryptu PHP do korzenia projektu np. './', '../', '../../'
+             */
             for ($i = $this->scriptLevel(); $i >= 0; --$i)
             {
                 $prefixFrom = ($i > 0) ? str_repeat('../', $i) : './';
@@ -190,6 +226,7 @@ class Autoloader
         }
         
         $this->stopAutoload[self::$prefixClass] = true;
+        $this->missingScripts[] = self::$prefixFrom.$this->prefix.$class;
     }
     
     
