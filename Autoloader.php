@@ -31,44 +31,52 @@ class Autoloader
     
     
     /**
-     * @var string  nazwa klasy 
-     */
-    static private $class;
-    
-    /**
-     * @var string  prefiks wyliczany dla wywolywanej klasy przez funkcje "self::prefixClass" np: "Doctrine"
-     */
-    static private $prefixClass;
-    
-    /**
-     * @var string  sciezka od skryptu PHP do korzenia projektu - wyliczana automatycznie
-     */
-    static private $prefixFrom;
-    
-    /**
-     * Uzywane do debugowania
-     * @var int licznik dla blednych sciezek do class
-     */
-    static private $missingCounter = 0;
-    
-    /**
-     * Uzywane przy bledzie ladowania klasy - pokazywane sa bledne sciezki do ladowania klas 
-     * @var array   tablica obiektow klasy Autoloader w porzadku jak zostaly zaladowane
-     */
-    static private $loaders = array();
-    
-    
-    
-    /**
      * Funkcja wlaczajaca automatyczne ladowanie klas
-     * @param string-array $prefix  prefiks lub prefiksy
-     * @see self::$prefix
+     * @param string-array $prefixAutoloader  prefiks lub prefiksy
      * @param bool $isIncludePath   czy maja byc czytane sciezki z include_path
      */
-    static public function startAutoload($prefix = '', $isIncludePath = false)
+    static public function startAutoload($prefixAutoloader = '', $isIncludePath = false)
     {
-        $prefixes = (array) $prefix;
-        
+        new self($prefixAutoloader, $isIncludePath);
+    }
+    
+    
+    
+    /**
+     * @var array   tablica sciezek dla autoloader (od korzenia projektu do miejsca ladowania klas)
+     */
+    private $prefixesAutoloader;
+
+    /**
+     * @var array   tablica sciezek dla prefix-class (od skryptu PHP do miejsca ladowania klas)
+     */
+    private $prefixesPath;
+
+    /**
+     * @var string  od skryptu PHP do korzenia projektu 
+     */
+    private $prefixFrom;
+
+    /**
+     * @var array   tablica przechowujaca bledne sciezki do class - uzywane do debugowania
+     */
+    private $missingScripts = array();
+
+    /**
+     * @var bool    okresla czy ten autoloader jest ostatnim autoloaderem w SPL
+     */
+    private $isLastLoaderSPL;
+    
+    
+    
+    /**
+     * @param string-array $prefixAutoloader  prefiks lub prefiksy
+     * @param bool $isIncludePath   czy maja byc czytane sciezki z include_path
+     */
+    private function __construct($prefixAutoloader, $isIncludePath)
+    {
+        $prefixesAutoloader = (array) $prefixAutoloader;
+
         if ($isIncludePath)
         {
             $includePath = get_include_path();
@@ -77,32 +85,118 @@ class Autoloader
                 foreach (explode(PATH_SEPARATOR, $includePath) as $p)
                 {
                     if ($p !== '.')
-                        $prefixes[] = $p;
+                        $prefixesAutoloader[] = $p;
                 }
             }
         }
-        
+
         //--------------------------
-        
-        foreach ($prefixes as $prefix)
+
+        foreach ($prefixesAutoloader as $prefixAutoloader)
         {
-            new self($prefix);
+            $prefixAutoloader = (string) $prefixAutoloader;
+
+            if ($prefixAutoloader !== '')
+            {
+                if ($this->isAbsolutePath($prefixAutoloader))
+                    $prefixAutoloader = $this->createRelativePath($prefixAutoloader);
+                if (substr($prefixAutoloader, -1) !== '/')
+                    $prefixAutoloader .= '/';
+            }
+
+            $this->prefixesAutoloader[] = $prefixAutoloader;
+        }
+
+        spl_autoload_register(array($this, 'autoload'));
+    }
+    
+    public function __destruct()
+    {
+        if (self::IS_DEBUG)
+        {
+            $this->showDebugInfo();
         }
     }
     
     /**
-     * Funkcja dodaje nowa funkcje do automatycznego ladowania klas, np. z Doctrine
-     * @param callable $autoload_function
-     * @param bool $throw
-     * @param bool $prepend
-     * @return bool
+     * Funkcja realizujaca ladowanie klas
+     * @param string    $class  nazwa klasy
+     * @return bool     czy sukces
      */
-    static public function spl_autoload_register($autoload_function, $throw = true, $prepend = false)
+    public function autoload($class)
     {
-        return  spl_autoload_register($autoload_function, $throw, $prepend);
+        $prefixClass = $this->prefixClass($class);
+
+        $class = str_replace('\\', '/', $class) . '.php';
+
+        if (isset($this->prefixesPath[$prefixClass]))
+        {
+            /*
+             * oznacza ze ten autoloader wczesniej nie byl stanie zaladowac klasy z tego prefiksu
+             * co oznacza, ze ten prefiks nie jest obslugiwany przed ten autloader
+             * i jakis inny obcy autloader bedzie musial zaladowac ta klase
+             */
+            if ($this->prefixesPath[$prefixClass] === false)
+                return false;
+
+            if ((@include $this->prefixesPath[$prefixClass] . $class) !== false)
+                return true;
+        }
+        else
+        {
+            foreach ($this->prefixesAutoloader as $prefixAutoloder)
+            {
+                if (isset($this->prefixFrom))
+                {
+                    if ((@include $this->prefixFrom . $prefixAutoloder . $class) !== false)
+                    {
+                        $this->prefixesPath[$prefixClass] = $this->prefixFrom . $prefixAutoloder;
+                        return true;
+                    }
+                }
+                else
+                {
+                    /*
+                     * obliczenie "$this->prefixFrom" - to jest robione tylko raz
+                     * oblicza sciezke od skryptu PHP do korzenia projektu np. './', '../', '../../'
+                     */
+                    for ($i = $this->scriptLevel(); $i >= 0; --$i)
+                    {
+                        $prefixFrom = ($i > 0) ? str_repeat('../', $i) : './';
+                        $path = $prefixFrom . $prefixAutoloder . $class;
+                        if (file_exists($path))
+                        {
+                            require $path;
+                            $this->prefixFrom = $prefixFrom;
+                            $this->prefixesPath[$prefixClass] = $prefixFrom . $prefixAutoloder;
+
+                            return true;
+                        }
+                    }
+                }
+
+                $this->missingScripts[$prefixAutoloder][] = $this->prefixFrom . $prefixAutoloder . $class;
+            }
+        }
+
+
+        /* tu trafiaja niezaladowne klasy */
+
+        $this->prefixesPath[$prefixClass] = false;
+
+        if (!isset($this->isLastLoaderSPL))
+        {
+            $splLoaders = spl_autoload_functions();
+            $lastSpl = end($splLoaders);
+
+            if ($lastSpl[0] === $this)
+                $this->warningWrongPath($class);
+            else
+                $this->isLastLoaderSPL = false;
+        }
+
+        return false;
     }
-    
-    
     
     /**
      * Funkcja oblicza prefiks dla wywolywanej klasy np. dla Zend_Db_Table prefiksem bedzie "Zend"
@@ -113,10 +207,10 @@ class Autoloader
      * @param string $class
      * @return string   prefiks klasy
      */
-    static protected function prefixClass($class)
+    protected function prefixClass($class)
     {
-        return  strstr($class, '\\', true);
-        
+        return strstr($class, '\\', true);
+
         /* kod uwzgledniajacy prefiks w Zend */
 //        $prefix = strstr($class, '\\', true);
 //        if ($prefix === false)
@@ -126,139 +220,6 @@ class Autoloader
 //        return $prefix;
     }
     
-    
-    
-    
-    
-    /**
-     * Okresla sciezke od korzenia projektu do katalogu gdzie ma byc ladowanie klas - domyslnie '',
-     * 
-     * wartosc '' (pusty string) ozn. ze wszystkie klasy ktore maja byc automatycznie ladowane sa umieszczone
-     * na samej gorze projektu a wartosc 'classes/' ozn. ze wszystkie klasy do ladowania sa umieszczone
-     * tylko w katalogu 'classes/'
-     * 
-     * @var string
-     */
-    private $prefix;
-    
-    /**
-     * Tablica, gdzie klucze to prefiksy, ktore maja byc blokowane np."Doctrine",
-     * wartosc jest wyliczana automatycznie, ale mozna ja wpisac recznie
-     * @var array
-     */
-    private $stopAutoload = array();
-    
-    /**
-     * Tablica przechowujaca bledne sciezki do class - uzywane do debugowania
-     * @var array
-     */
-    private $missingScripts = array();
-    
-    /**
-     * Okresla czy dany obiekt jest ostatnim autoloaderem w SPL
-     * @var bool
-     */
-    private $isLastLoaderSPL;
-    
-    
-    
-    /**
-     * @param string $prefix
-     * @see self::$prefix
-     */
-    public function __construct($prefix = '')
-    {
-        $prefix = (string) $prefix;
-        
-        if ($prefix !== '')
-        {
-            if ($this->isAbsolutePath($prefix))
-                $prefix = $this->createRelativePath($prefix);
-            if (substr($prefix, -1) !== '/')
-                $prefix .= '/';
-        }
-        $this->prefix = $prefix;
-        self::$loaders[] = $this;
-        
-        spl_autoload_register(array($this, 'autoload'));
-    }
-    
-    public function __destruct()
-    {
-        if (self::IS_DEBUG)
-        {
-            echo 'Prefix class: \''.$this->prefix.'\'<br />';
-            foreach ($this->missingScripts as $m)
-            {
-                echo '<pre>'.print_r(++self::$missingCounter.'. '.$m,true).'</pre>';
-            }
-        }
-    }
-    
-    
-    /**
-     * Funkcja realizujaca ladowanie klas
-     * @param string $class
-     */
-    public function autoload($class)
-    {
-        if (self::$class !== $class)
-        {
-            self::$class = $class;
-            self::$prefixClass = self::prefixClass($class);
-        }
-        
-        if (isset($this->stopAutoload[self::$prefixClass]))
-        {
-            return;
-        }
-        
-        
-        $class = str_replace('\\', '/', $class).'.php';
-        
-        if (isset(self::$prefixFrom))
-        {
-            if ((@include self::$prefixFrom.$this->prefix.$class) !== false) return;
-        }
-        else
-        {
-            /*
-             * obliczenie "self::$prefixFrom" - to jest robione tylko raz
-             * oblicza sciezka od skryptu PHP do korzenia projektu np. './', '../', '../../'
-             */
-            for ($i = $this->scriptLevel(); $i >= 0; --$i)
-            {
-                $prefixFrom = ($i > 0) ? str_repeat('../', $i) : './';
-                $path = $prefixFrom.$this->prefix.$class;
-                if (file_exists($path))
-                {
-                    require $path;
-                    self::$prefixFrom = $prefixFrom;
-                    return;
-                }
-            }
-        }
-        
-        $this->stopAutoload[self::$prefixClass] = true;
-        $this->missingScripts[] = self::$prefixFrom.$this->prefix.$class;
-        if (!isset($this->isLastLoaderSPL))
-        {
-            if (end(self::$loaders) === $this)
-            {
-                $splLoaders = spl_autoload_functions();
-                $lastSpl = end($splLoaders);
-                if ($lastSpl[0] === $this)
-                {
-                    $this->warningWrongPath($class);
-                    return;
-                }
-            }
-            
-            $this->isLastLoaderSPL = false;
-        }
-    }
-    
-    
     /**
      * Funkcja oblicza poziom zagniezdzenia skryptu PHP
      * @return int
@@ -266,84 +227,104 @@ class Autoloader
     private function scriptLevel()
     {
         $dir = dirname(getenv('SCRIPT_NAME'));
-        
+
         return
-            ($dir === '/' || $dir === '\\')
-                ?   0
-                :   substr_count($dir, '/');
+                ($dir === '/' || $dir === '\\') ? 0 : substr_count($dir, '/');
     }
     
     /**
-    * Funkcja sprawdza czy sciezka jest bezwgledna
-    * @param string $path
-    * @return bool
-    */
-   private function isAbsolutePath($path)
-   {
-       $p = __DIR__;
-       if ($p{0} === '/')  // Linux
-       {
-           return $path{0} === '/';
-       }
-       else                // Windows
-       {
-           return (bool) preg_match('/^[c-z]:/i', $path);
-       }
-   }
+     * Funkcja sprawdza czy sciezka jest bezwgledna
+     * @param string $path
+     * @return bool
+     */
+    private function isAbsolutePath($path)
+    {
+        $p = __DIR__;
+        if ($p{0} === '/')  // Linux
+        {
+            return $path{0} === '/';
+        }
+        else                // Windows
+        {
+            return (bool) preg_match('/^[c-z]:/i', $path);
+        }
+    }
+    
+    /**
+     * Funkcja tworzy sciezke wzgledna od miejsca wykonywania skryptu do miejsca wskazanego przez sciezke bezwgledna
+     * @param string $path  sciezka bezwgledna
+     * @return string   sciezka wzgledna
+     * @throws Exception
+     */
+    private function createRelativePath($path)
+    {
+        $p = realpath($path);
+        if ($p === false)
+        {
+            throw new Exception("path: $path does not exist");
+        }
 
-   /**
-    * Funkcja tworzy sciezke wzgledna od miejsca wykonywania skryptu do miejsca wskazanego przez sciezke bezwgledna
-    * @param string $path  sciezka bezwgledna
-    * @return string   sciezka wzgledna
-    * @throws Exception
-    */
-   private function createRelativePath($path)
-   {
-       $p = realpath($path);
-       if ($p === false)
-       {
-           throw new Exception("path: $path does not exist");
-       }
+        $path = $p;
+        $p = __DIR__;
 
-       $path = $p;
-       $p = __DIR__;
+        if ($path{0} === '/')  // Linux
+        {
+            $arrP = explode('/', $p);
+            $arrPath = explode('/', $path);
+        }
+        else                    // Windows
+        {
+            $arrP = explode('\\', $p);
+            $arrPath = explode('\\', $path);
+        }
 
-       if ($path{0} === '/')  // Linux
-       {
-           $arrP = explode('/', $p);
-           $arrPath = explode('/', $path);
-       }
-       else                    // Windows
-       {
-           $arrP = explode('\\', $p);
-           $arrPath = explode('\\', $path);
-       }
+        $i = 0;
+        $end = min(count($arrP), count($arrPath));
+        while ($i < $end && $arrP[$i] === $arrPath[$i])
+            ++$i;
 
-       $i = 0;
-       $end = min(count($arrP), count($arrPath));
-       while($i<$end  && $arrP[$i]===$arrPath[$i]) ++$i;
+        $p = implode('/', array_slice($arrP, $i));
+        $path = implode('/', array_slice($arrPath, $i));
 
-       $p = implode('/', array_slice($arrP, $i));
-       $path = implode('/', array_slice($arrPath, $i));
-
-       return
-           ($p === '' ? '' : str_repeat('../', substr_count($p, '/')+1))
-           .$path;
-   }
-   
-   /**
-    * Funkcja pokazuje warning na temat niezaladowanych sciezek do klas
-    * @param string $class
-    */
-   private function warningWrongPath($class)
-   {
-       foreach (self::$loaders as $l)
-       {
-           /* @var $l Autoloader */
-           trigger_error(
-                   "Wrong path to class: '".self::$prefixFrom.$l->prefix.$class."'",
-                   E_USER_WARNING
-                   );
-       }
-   }
+        return
+                ($p === '' ? '' : str_repeat('../', substr_count($p, '/') + 1))
+                . $path;
+    }
+    
+    /**
+     * Funkcja pokazuje warning na temat niezaladowanych sciezek do klas
+     * @param string $class
+     */
+    private function warningWrongPath($class)
+    {
+        foreach ($this->prefixesAutoloader as $prefixAutoloader)
+        {
+            /* @var $prefixAutoloader Autoloader */
+            trigger_error(
+                    "Wrong path to class: '" . $this->prefixFrom . $prefixAutoloader . $class . "'", E_USER_WARNING
+            );
+        }
+    }
+    
+    /**
+     * Funkcja pokazuje informacje z debugowania
+     */
+    private function showDebugInfo()
+    {
+        echo '<pre>----------------------------------------------------------</pre>';
+        echo 'OBJECT AUTOLOAD:';
+        echo '<pre>' . print_r($this, true) . '</pre>';
+        
+        echo '<pre>----------------------------------------------------------</pre>';
+        echo 'MISSING SCRIPTS: <br /><br />';
+        $i = 0;
+        foreach ($this->missingScripts as $prefixAutoloder => $missingScripts)
+        {
+            echo 'Prefix autoloader: \'' . $prefixAutoloder . '\'<br />';
+            foreach ($missingScripts as $m)
+            {
+                echo '<pre>' . print_r(++$i . '. ' . $m, true) . '</pre>';
+            }
+        }
+    }
 }
