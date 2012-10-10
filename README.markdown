@@ -1,36 +1,23 @@
 ## Overview
 
-This is the first version of the autoloader. This autoloader can load classes from only one location (directory). Such a place can be a directory "Classes" or any other name, or just the class can be placed on top of the project.
+Autoloader can load classes from different locations (directories), but only one such location classes can be loaded without the "namespace". Other different places (catalogs of classes) have to use the namespace and also in any one location (directory) all classes have to a common initial namespace prefix. An example of such a common initial prefix are:
 
-This place (directory) is set in the class **Autoloader** in constant **PREFIX**, for example:
+      \Zend\...
+      \Doctrine\...
 
-      const PREFIX = 'Classes/';  // for the directory "Classes"
-      const PREFIX = '';          // for classes located at the top of the project
+Places loading classes (directories) can be specified as a relative path or absolute path:
 
-if **PREFIX** is not empty at the end of the directory must be specified slash "/"
-
-
+      'your/path/to/Classes'
+      '/your/path/to/Doctrine'
 
 ## Usage
 
-#### Example for the classes are placed in the directory "Classes":
-
-*Autoloader.php*
-
-      const PREFIX = 'Classes/';
-
-*index.php*
+#### Example for the classes are placed in the directory "Classes" and "Doctrine":
 
       require './Autoloader.php';
-      Autoloader::startAutoload();
+      Autoloader::startAutoload( array('your/path/to/Classes','/your/path/to/Doctrine') );
 
 #### Example for the classes are on top of the project:
 
-*Autoloader.php*
-
-      const PREFIX = '';
-
-*index.php*
-
       require './Autoloader.php';
-      Autoloader::startAutoload();
+      Autoloader::startAutoload('');
