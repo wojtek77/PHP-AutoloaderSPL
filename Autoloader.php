@@ -177,12 +177,12 @@ class Autoloader
 
                 $this->missingScripts[$prefixAutoloder][] = $this->prefixFrom . $prefixAutoloder . $class;
             }
+            
+            $this->prefixesPath[$prefixClass] = false;
         }
 
 
         /* tu trafiaja niezaladowne klasy */
-
-        $this->prefixesPath[$prefixClass] = false;
 
         if (!isset($this->isLastLoaderSPL))
         {
@@ -190,7 +190,7 @@ class Autoloader
             $lastSpl = end($splLoaders);
 
             if ($lastSpl[0] === $this)
-                $this->warningWrongPath($class);
+                $this->warningWrongPath($class, $prefixClass);
             else
                 $this->isLastLoaderSPL = false;
         }
@@ -294,16 +294,35 @@ class Autoloader
     /**
      * Funkcja pokazuje warning na temat niezaladowanych sciezek do klas
      * @param string $class
+     * @param mixed $prefixClass
      */
-    private function warningWrongPath($class)
+    private function warningWrongPath($class, $prefixClass)
     {
-        foreach ($this->prefixesAutoloader as $prefixAutoloader)
+        if ($this->prefixesPath[$prefixClass] === false)
         {
-            /* @var $prefixAutoloader Autoloader */
-            trigger_error(
-                    "Wrong path to class: '" . $this->prefixFrom . $prefixAutoloader . $class . "'", E_USER_WARNING
-            );
+            if (count($this->prefixesAutoloader) === 1)
+            {
+                $message = "The wrong path: <b>'" . $this->prefixFrom . $this->prefixesAutoloader[0] . $class . "'</b>";
+            }
+            else
+            {
+                $paths = array();
+                foreach ($this->prefixesAutoloader as $prefixAutoloader)
+                {
+                    $paths[] = "<b>'" . $this->prefixFrom . $prefixAutoloader . $class . "'</b>";
+                }
+                $message = "Wrong one path from: " . implode(', ', $paths);
+            }
         }
+        else
+        {
+            $message = "The wrong path: <b>'" . $this->prefixesPath[$prefixClass] . $class . "'</b>";
+        }
+        
+        /* wyswietlenie wiadomosci bez "Call Stack" */
+        xdebug_disable();
+        trigger_error($message, E_USER_WARNING);
+        xdebug_enable();
     }
     
     /**
