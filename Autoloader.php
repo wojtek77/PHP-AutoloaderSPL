@@ -125,7 +125,7 @@ class Autoloader
      */
     public function autoload($class)
     {
-        $prefixClass = $this->prefixClass($class);
+        $prefixClass = strstr($class, '\\', true);
 
         $class = str_replace('\\', '/', $class) . '.php';
 
@@ -196,28 +196,6 @@ class Autoloader
         }
 
         return false;
-    }
-    
-    /**
-     * Funkcja oblicza prefiks dla wywolywanej klasy np. dla Zend_Db_Table prefiksem bedzie "Zend"
-     * a dla wywolania test\test2\Class prefiksem bedzie "test"
-     * 
-     * Ta funkcja powinna zostac dostosowana do indywidualnych potrzeb
-     * 
-     * @param string $class
-     * @return string   prefiks klasy
-     */
-    protected function prefixClass($class)
-    {
-        return strstr($class, '\\', true);
-
-        /* kod uwzgledniajacy prefiks w Zend */
-//        $prefix = strstr($class, '\\', true);
-//        if ($prefix === false)
-//        {
-//            $prefix = strstr($class, '_', true);
-//        }
-//        return $prefix;
     }
     
     /**
