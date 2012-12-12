@@ -1,9 +1,12 @@
 ## Overview
 
-Autoloader can load classes from different locations (directories), but only one such location classes can be loaded without the "namespace". Other different places (catalogs of classes) have to use the namespace and also in any one location (directory) all classes have to a common initial namespace prefix. An example of such a common initial prefix are:
+Autoloader can load classes from different locations (directories) even if many of them don't use namespace. This additional functionality is at the cost of reduced performance.
 
-      \Zend\...
-      \Doctrine\...
+Autoloader can also load class where underscore is converted to a slash (eg Zend_Acl), but you need to set a constant in the class:
+
+*Autoloader.php*
+
+      const IS_UNDERSCORE_TO_PATH = true;
 
 Places loading classes (directories) can be specified as a relative path or absolute path:
 
@@ -12,12 +15,12 @@ Places loading classes (directories) can be specified as a relative path or abso
 
 ## Usage
 
-#### Example for the classes are placed in the directory "Classes" and "Doctrine":
+#### Example for classes which are placed in the directory "Classes" and "Doctrine":
 
       require './Autoloader.php';
       Autoloader::startAutoload( array('your/path/to/Classes','/your/path/to/Doctrine') );
 
-#### Example for the classes are on top of the project:
+#### Example for classes which are in the same place where the program is run:
 
       require './Autoloader.php';
       Autoloader::startAutoload('');
