@@ -12,12 +12,12 @@ Places loading classes (directories) can be specified as a relative path or abso
 
 ## Usage
 
-#### Example for the classes are placed in the directory "Classes" and "Doctrine":
+#### Example for classes which are placed in the directory "Classes" and "Doctrine":
 
       require './Autoloader.php';
       Autoloader::startAutoload( array('your/path/to/Classes','/your/path/to/Doctrine') );
 
-#### Example for the classes are on top of the project:
+#### Example for classes which are in the same place where the program is run:
 
       require './Autoloader.php';
       Autoloader::startAutoload('');
