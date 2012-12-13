@@ -24,3 +24,8 @@ Places loading classes (directories) can be specified as a relative path or abso
 
       require './Autoloader.php';
       Autoloader::startAutoload('');
+
+#### Example where apart from the path is given the prefix of class (here Doctrine):
+
+      require './Autoloader.php';
+      Autoloader::startAutoload( array('Doctrine'=>'your/path/to/Doctrine') );

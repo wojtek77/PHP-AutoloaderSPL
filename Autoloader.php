@@ -79,7 +79,7 @@ class Autoloader
         
         //--------------------------
 
-        foreach ($prefixesAutoloader as $prefixAutoloader)
+        foreach ($prefixesAutoloader as $key => $prefixAutoloader)
         {
             $absolutePrefixAutoloader = stream_resolve_include_path($prefixAutoloader);
             if ($absolutePrefixAutoloader === false)
@@ -88,7 +88,15 @@ class Autoloader
                 continue;
             }
             
-            $this->prefixesAutoloader[] = $absolutePrefixAutoloader.DIRECTORY_SEPARATOR;
+            $absolutePrefixAutoloader .= DIRECTORY_SEPARATOR;
+            if (is_string($key) && $key !== '')
+            {
+                $this->prefixesPath[$key] = $absolutePrefixAutoloader;
+            }
+            else
+            {
+                $this->prefixesAutoloader[] = $absolutePrefixAutoloader;
+            }
         }
 
         spl_autoload_register(array($this, 'autoload'));
@@ -113,7 +121,7 @@ class Autoloader
 
         if ($prefixClass !== false && isset($this->prefixesPath[$prefixClass]))
         {
-            $class = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
+            $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
             
             /*
              * means that before the autoloader was not able to load a class with this prefix
@@ -122,7 +130,15 @@ class Autoloader
              */
             if ($this->prefixesPath[$prefixClass] === false) return false;
 
-            if ((@include $this->prefixesPath[$prefixClass].$class) !== false) return true;
+            if ((@include $this->prefixesPath[$prefixClass].$classPath) !== false) return true;
+            else
+            {
+                $this->throwWarning(
+                    "The class prefix <b>'$prefixClass'</b> has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
+                );
+                unset($this->prefixesPath[$prefixClass]);
+                return $this->autoload($class);
+            }
         }
         else
         {
@@ -130,17 +146,17 @@ class Autoloader
             
             if ($isNamespace)
             {
-                $class = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
+                $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
                 
                 foreach ($this->prefixesAutoloader as $prefixAutoloder)
                 {
-                    if ((@include $prefixAutoloder.$class) !== false)
+                    if ((@include $prefixAutoloder.$classPath) !== false)
                     {
                         $this->prefixesPath[$prefixClass] = $prefixAutoloder;
                         return true;
                     }
 
-                    $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$class;
+                    $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$classPath;
                 }
                 
                 $this->prefixesPath[$prefixClass] = false;
@@ -155,24 +171,33 @@ class Autoloader
                 }
                 
                 if (self::IS_UNDERSCORE_TO_PATH)
-                    $class = str_replace('_', DIRECTORY_SEPARATOR, $class).'.php';
+                    $classPath = str_replace('_', DIRECTORY_SEPARATOR, $class).'.php';
                 else
-                    $class .= '.php';
+                    $classPath = $class.'.php';
                 
-                if (isset($this->prefixesPathPseudo[$prefixClassPseudo])
-                        && (@include $this->prefixesPathPseudo[$prefixClassPseudo].$class) !== false)
-                    return true;
+                if (isset($this->prefixesPathPseudo[$prefixClassPseudo]))
+                {
+                    if ((@include $this->prefixesPathPseudo[$prefixClassPseudo].$classPath) !== false) return true;
+                    else
+                    {
+                        $this->throwWarning(
+                            "The pseudo class prefix <b>'$prefixClassPseudo'</b> has wrong path"
+                            ." <b>{$this->prefixesPathPseudo[$prefixClassPseudo]}</b>"
+                        );
+                        unset($this->prefixesPathPseudo[$prefixClassPseudo]);
+                    }
+                }
                 
                 
                 foreach ($this->prefixesAutoloader as $prefixAutoloder)
                 {
-                    if ((@include $prefixAutoloder.$class) !== false)
+                    if ((@include $prefixAutoloder.$classPath) !== false)
                     {
                         $this->prefixesPathPseudo[$prefixClassPseudo] = $prefixAutoloder;
                         return true;
                     }
 
-                    $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$class;
+                    $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$classPath;
                 }
             }
         }
@@ -185,7 +210,7 @@ class Autoloader
             $splLoaders = spl_autoload_functions();
             $lastSpl = end($splLoaders);
 
-            if ($lastSpl[0] === $this) $this->warningWrongPath($class, $prefixClass);
+            if ($lastSpl[0] === $this) $this->warningWrongPath($classPath, $prefixClass);
             else $this->isLastLoaderSPL = false;
         }
 
