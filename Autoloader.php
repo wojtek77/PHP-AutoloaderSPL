@@ -7,6 +7,12 @@
  */
 class Autoloader
 {
+    /**
+     * the better performance with cache APC
+     * the class Autoloader automatically detects if the APC extension work
+     */
+    const IS_APC = true;
+    
     const IS_DEBUG = false;
     
     static private $autoloader;
@@ -16,11 +22,12 @@ class Autoloader
      * The function enabled automatic load classes
      * @param string|array|null $prefixAutoloader  one prefix (as string) or many prefixes (as array)
      * @param bool $isIncludePath   if you want to read paths from include_path
+     * @param string $keyAPC   the key of APC which to save the data from the autoloader
      */
-    static public function startAutoload($prefixAutoloader='', $isIncludePath=false)
+    static public function startAutoload($prefixAutoloader='', $isIncludePath=false, $keyAPC=__FILE__)
     {
         if (!isset(self::$autoloader))
-            self::$autoloader = new self($prefixAutoloader, $isIncludePath);
+            self::$autoloader = new self($prefixAutoloader, $isIncludePath, $keyAPC);
     }
     
     
@@ -44,14 +51,73 @@ class Autoloader
      * @var bool    determines whether the autoloader is the last autoloader in the SPL
      */
     private $isLastLoaderSPL;
-
     
+    /**
+     * @var bool    if is used APC
+     */
+    private $isAPC;
+    
+    /**
+     * @var string  the key of APC which to save the data from the autoloader
+     */
+    private $keyAPC;
+    
+    /**
+     * @var stdClass data for APC
+     */
+    private $dataAPC;
+
+
+
     /**
      * @param string|array|null $prefixAutoloader  one prefix (as string) or many prefixes (as array)
      * @param bool $isIncludePath   if you want to read paths from include_path
+     * @param string $keyAPC   the key of APC which to save the data from the autoloader
      */
-    public function __construct($prefixAutoloader='', $isIncludePath=false)
+    public function __construct($prefixAutoloader='', $isIncludePath=false, $keyAPC=__FILE__)
     {
+        spl_autoload_register(array($this, 'autoload'));
+        
+        $this->isAPC = self::IS_APC && extension_loaded('apc');
+        
+        if ($this->isAPC)
+        {
+            $this->keyAPC = $keyAPC;
+            
+            /* binding */
+            $this->dataAPC = (object) array(
+                'prefixesAutoloader' => null,
+                'prefixesPath' => null,
+            );
+            foreach ($this->dataAPC as $k => $null)
+            {
+                $this->dataAPC->{$k} = & $this->{$k};
+            }
+            $this->dataAPC->crc = crc32(serialize(func_get_args()));
+            
+            $data = apc_fetch($keyAPC);
+            if ($data !== false)
+            {
+                if ($data->crc === $this->dataAPC->crc)
+                {
+                    unset($data->crc);
+                    foreach ($data as $k => $v)
+                    {
+                        $this->dataAPC->{$k} = $v;
+                    }
+                    
+                    return;
+                }
+                else
+                    $this->throwWarning(
+                        "APC cache data is lost because the input data has changed"
+                        ." (if it has not changed, consider using \$keyAPC)"
+                    );
+            }
+        }
+        
+        //-------------------------
+        
         $prefixesAutoloader = (array) $prefixAutoloader;
 
         if ($isIncludePath)
@@ -88,12 +154,15 @@ class Autoloader
                 $this->prefixesAutoloader[] = $absolutePrefixAutoloader;
             }
         }
-
-        spl_autoload_register(array($this, 'autoload'));
     }
 
     public function __destruct()
     {
+        if ($this->isAPC)
+        {
+            apc_store($this->keyAPC, $this->dataAPC);
+        }
+        
         if (self::IS_DEBUG)
         {
             $this->showDebugInfo();
