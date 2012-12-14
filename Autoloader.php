@@ -118,36 +118,32 @@ class Autoloader
     public function autoload($class)
     {
         $prefixClass = strstr($class, '\\', true);
-
-        if ($prefixClass !== false && isset($this->prefixesPath[$prefixClass]))
+        
+        if ($prefixClass !== false) // the class prefix exists
         {
             $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
             
-            /*
-             * means that before the autoloader was not able to load a class with this prefix
-             * and the prefix is not supported by this autloader
-             * and another foreign autloader have to load this class
-             */
-            if ($this->prefixesPath[$prefixClass] === false) return false;
+            if (isset($this->prefixesPath[$prefixClass]))
+            {
+                /*
+                 * means that before the autoloader was not able to load a class with this prefix
+                 * and the prefix is not supported by this autloader
+                 * and another foreign autloader have to load this class
+                 */
+                if ($this->prefixesPath[$prefixClass] === false) return false;
 
-            if ((@include $this->prefixesPath[$prefixClass].$classPath) !== false) return true;
+                if ((@include $this->prefixesPath[$prefixClass].$classPath) !== false) return true;
+                else
+                {
+                    $this->throwWarning(
+                        "The class prefix <b>'$prefixClass'</b> has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
+                    );
+                    unset($this->prefixesPath[$prefixClass]);
+                    return $this->autoload($class);
+                }
+            }
             else
             {
-                $this->throwWarning(
-                    "The class prefix <b>'$prefixClass'</b> has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
-                );
-                unset($this->prefixesPath[$prefixClass]);
-                return $this->autoload($class);
-            }
-        }
-        else
-        {
-            $isNamespace = $prefixClass !== false;
-            
-            if ($isNamespace)
-            {
-                $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
-                
                 foreach ($this->prefixesAutoloader as $prefixAutoloder)
                 {
                     if ((@include $prefixAutoloder.$classPath) !== false)
@@ -161,48 +157,48 @@ class Autoloader
                 
                 $this->prefixesPath[$prefixClass] = false;
             }
-            else
+        }
+        else    // the class prefix doesn't exist and will be created a pseudo class prefix
+        {
+            $prefixClassPseudo = strstr($class, '_', true);
+            if ($prefixClassPseudo === false)
             {
-                $prefixClassPseudo = strstr($class, '_', true);
-                if ($prefixClassPseudo === false)
-                {
-                    preg_match('/.+?(?=[A-Z0-9]|$)/', $class, $w);
-                    $prefixClassPseudo = $w[0];
-                }
-                
-                if (self::IS_UNDERSCORE_TO_PATH)
-                    $classPath = str_replace('_', DIRECTORY_SEPARATOR, $class).'.php';
-                else
-                    $classPath = $class.'.php';
-                
-                if (isset($this->prefixesPathPseudo[$prefixClassPseudo]))
-                {
-                    if ((@include $this->prefixesPathPseudo[$prefixClassPseudo].$classPath) !== false) return true;
-                    else
-                    {
-                        $this->throwWarning(
-                            "The pseudo class prefix <b>'$prefixClassPseudo'</b> has wrong path"
-                            ." <b>{$this->prefixesPathPseudo[$prefixClassPseudo]}</b>"
-                        );
-                        unset($this->prefixesPathPseudo[$prefixClassPseudo]);
-                    }
-                }
-                
-                
-                foreach ($this->prefixesAutoloader as $prefixAutoloder)
-                {
-                    if ((@include $prefixAutoloder.$classPath) !== false)
-                    {
-                        $this->prefixesPathPseudo[$prefixClassPseudo] = $prefixAutoloder;
-                        return true;
-                    }
+                preg_match('/.+?(?=[A-Z0-9]|$)/', $class, $w);
+                $prefixClassPseudo = $w[0];
+            }
 
-                    $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$classPath;
+            if (self::IS_UNDERSCORE_TO_PATH)
+                $classPath = str_replace('_', DIRECTORY_SEPARATOR, $class).'.php';
+            else
+                $classPath = $class.'.php';
+
+            if (isset($this->prefixesPathPseudo[$prefixClassPseudo]))
+            {
+                if ((@include $this->prefixesPathPseudo[$prefixClassPseudo].$classPath) !== false) return true;
+                else
+                {
+                    $this->throwWarning(
+                        "The pseudo class prefix <b>'$prefixClassPseudo'</b> has wrong path"
+                        ." <b>{$this->prefixesPathPseudo[$prefixClassPseudo]}</b>"
+                    );
+                    unset($this->prefixesPathPseudo[$prefixClassPseudo]);
                 }
             }
+
+
+            foreach ($this->prefixesAutoloader as $prefixAutoloder)
+            {
+                if ((@include $prefixAutoloder.$classPath) !== false)
+                {
+                    $this->prefixesPathPseudo[$prefixClassPseudo] = $prefixAutoloder;
+                    return true;
+                }
+
+                $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$classPath;
+            }
         }
-
-
+        
+        
         /* unloaded classes go here */
 
         if (!isset($this->isLastLoaderSPL))
