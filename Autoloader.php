@@ -193,7 +193,8 @@ class Autoloader
             else
             {
                 $this->throwWarning(
-                    "The class prefix <b>'$prefixClass'</b> has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
+                    "Problem with the class <b>$class</b>, classPrefix <b>'$prefixClass'</b>"
+                    ." has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
                 );
                 unset($this->prefixesPath[$prefixClass]);
                 return $this->autoload($class);
@@ -223,8 +224,15 @@ class Autoloader
             $splLoaders = spl_autoload_functions();
             $lastSpl = end($splLoaders);
 
-            if ($lastSpl[0] === $this) $this->warningWrongPath($classPath, $prefixClass);
-            else $this->isLastLoaderSPL = false;
+            if ($lastSpl[0] === $this)
+            {
+                $this->throwWarning(
+                    "Problem with loading the class <b>$classPath</b>"
+                    ." (classPrefix <b>".($prefixClass?:'false')."</b>)"
+                );
+            }
+            else
+                $this->isLastLoaderSPL = false;
         }
 
         return false;
@@ -232,39 +240,18 @@ class Autoloader
     
     
     
-    private function warningWrongPath($class, $prefixClass)
-    {
-        if ($this->prefixesPath[$prefixClass] === false)
-        {
-            if (count($this->prefixesAutoloader) === 1)
-            {
-                $message = "The wrong path: <b>'".$this->prefixesAutoloader[0].$class."'</b>";
-            }
-            else
-            {
-                $paths = array();
-                foreach ($this->prefixesAutoloader as $prefixAutoloader)
-                {
-                    $paths[] = "<b>'".$prefixAutoloader.$class."'</b>";
-                }
-                $message = "Wrong one path from: ".implode(', ', $paths);
-            }
-        }
-        else
-        {
-            $message = "The wrong path: <b>'".$this->prefixesPath[$prefixClass].$class."'</b>";
-        }
-        
-        $this->throwWarning($message);
-    }
-    
     private function throwWarning($message)
     {
-        /* display warning without "Call Stack" */
-        xdebug_disable();
-        trigger_error("&nbsp;&nbsp;&nbsp;$message&nbsp;&nbsp;&nbsp;", E_USER_WARNING);
-        xdebug_enable();
-        
+        $error_handler = function ($level, $message, $file, $line, $context)
+        {
+            $debug = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
+            $debug = (object) $debug[2];
+            echo "<b>Warning</b>:&nbsp;&nbsp;&nbsp;&nbsp;$message&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;in <b>$debug->file</b> on line <b>$debug->line</b><br />";
+            file_put_contents('php://stderr', "Warning:    ".strip_tags($message)."\t    in $debug->file on line $debug->line\n");
+        };
+        set_error_handler($error_handler);
+        trigger_error($message, E_USER_WARNING);
+        restore_error_handler();
     }
 
     private function showDebugInfo()
