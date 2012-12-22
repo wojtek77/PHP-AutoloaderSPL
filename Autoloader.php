@@ -224,7 +224,7 @@ class Autoloader
             $splLoaders = spl_autoload_functions();
             $lastSpl = end($splLoaders);
 
-            if ($lastSpl[0] === $this)
+            if (is_array($lastSpl) && $lastSpl[0] === $this)
             {
                 $this->throwWarning(
                     "Problem with loading the class <b>$classPath</b>"
