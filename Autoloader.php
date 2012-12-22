@@ -39,6 +39,11 @@ class Autoloader
     
     
     /**
+     * @var array   prefixes of class given in __construct() (which not automatically calculated)
+     */
+    private $inputPrefixesClass;
+    
+    /**
      * @var array   absolute paths to the places where classes are loaded
      */
     private $prefixesAutoloader = array();
@@ -52,7 +57,7 @@ class Autoloader
      * @var array   pseudo class prefixes (as key) and absolute paths had loaded classes (as value)
      */
     private $prefixesPathPseudo;
-
+    
     /**
      * @var array   missing scripts (paths) of classes - used by debug
      */
@@ -97,6 +102,7 @@ class Autoloader
             
             /* binding */
             $this->dataAPC = (object) array(
+                'inputPrefixesClass' => null,
                 'prefixesAutoloader' => null,
                 'prefixesPath' => null,
                 'prefixesPathPseudo' => null,
@@ -158,7 +164,21 @@ class Autoloader
             $absolutePrefixAutoloader .= DIRECTORY_SEPARATOR;
             if (is_string($key) && $key !== '')
             {
-                $this->prefixesPath[$key] = $absolutePrefixAutoloader;
+                $key = rtrim($key, '\\');
+                
+                $this->inputPrefixesClass[$key] = false;
+                
+                $ref = & $this->prefixesPath;
+                foreach (explode('\\', $key) as $v)
+                {
+                    if (is_string($ref)) $ref = array(''=>$ref);
+                    $ref = & $ref[$v];
+                }
+                
+                if (isset($ref))
+                    $ref[''] = $absolutePrefixAutoloader;
+                else
+                    $ref = $absolutePrefixAutoloader;
             }
             else
             {
@@ -193,24 +213,70 @@ class Autoloader
         {
             $classPath = str_replace('\\', DIRECTORY_SEPARATOR, $class).'.php';
             
+            $level = 0;
             if (isset($this->prefixesPath[$prefixClass]))
+            {
+                if (is_string($this->prefixesPath[$prefixClass]))
+                {
+                    $ref = & $this->prefixesPath[$prefixClass];
+                    $level = 1;
+                }
+                else
+                {
+                    $ref_tmp = & $this->prefixesPath;
+                    $i = 0;
+                    foreach (explode('\\', $class) as $subPrefix)
+                    {
+                        if (!isset($ref_tmp[$subPrefix])) break;
+                        
+                        ++$i;
+                        $ref_tmp = & $ref_tmp[$subPrefix];
+                        if (is_string($ref_tmp))
+                        {
+                            $ref = & $ref_tmp;
+                            $level = $i;
+                        }
+                        else
+                        {
+                            if (isset($ref_tmp['']))
+                            {
+                                $ref = & $ref_tmp[''];
+                                $level = $i;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if ($level)
             {
                 /*
                  * means that before the autoloader was not able to load a class with this prefix
                  * and the prefix is not supported by this autloader
                  * and another foreign autloader have to load this class
                  */
-                if ($this->prefixesPath[$prefixClass] === false) return false;
-
-                if ((@include $this->prefixesPath[$prefixClass].$classPath) !== false) return true;
+                if ($ref === false) return false;
+                
+                if ((@include $ref.$classPath) !== false) return true;
                 else
                 {
+                    $isSubPrefix = $level > 1;
+                    
+                    if ($isSubPrefix)
+                        $prefixClass = preg_replace('/^((?:[^\\\]*\\\[^\\\]*){'.($level-1).'})(.+)$/', '$1', $class, 1);
+                    
                     $this->throwWarning(
-                        "Problem with the class <b>$class</b>, classPrefix <b>'$prefixClass'</b>"
-                        ." has wrong path <b>{$this->prefixesPath[$prefixClass]}</b>"
+                        "Problem with the class <b>$class</b>, classPrefix <b>'$prefixClass'</b> has wrong path <b>{$ref}</b>"
                     );
-                    unset($this->prefixesPath[$prefixClass]);
-                    return $this->autoload($class);
+                    
+                    if (isset($this->inputPrefixesClass[$prefixClass]))
+                        return false;
+                    else
+                    {
+                        //$ref = null;
+                        unset($this->prefixesPath[$prefixClass]);
+                        return $this->autoload($class);
+                    }
                 }
             }
             else
@@ -219,14 +285,21 @@ class Autoloader
                 {
                     if ((@include $prefixAutoloder.$classPath) !== false)
                     {
-                        $this->prefixesPath[$prefixClass] = $prefixAutoloder;
+                        if (isset($this->prefixesPath[$prefixClass]) && is_array($this->prefixesPath[$prefixClass]))
+                            $this->prefixesPath[$prefixClass][''] = $prefixAutoloder;
+                        else
+                            $this->prefixesPath[$prefixClass] = $prefixAutoloder;
+                        
                         return true;
                     }
 
                     $this->missingScripts[$prefixAutoloder][] = $prefixAutoloder.$classPath;
                 }
                 
-                $this->prefixesPath[$prefixClass] = false;
+                if (isset($this->prefixesPath[$prefixClass]) && is_array($this->prefixesPath[$prefixClass]))
+                    $this->prefixesPath[$prefixClass][''] = false;
+                else
+                    $this->prefixesPath[$prefixClass] = false;
             }
         }
         else    // the class prefix doesn't exist and will be created a pseudo class prefix
@@ -276,7 +349,7 @@ class Autoloader
         {
             $splLoaders = spl_autoload_functions();
             $lastSpl = end($splLoaders);
-
+            
             if (is_array($lastSpl) && $lastSpl[0] === $this)
             {
                 $this->throwWarning(

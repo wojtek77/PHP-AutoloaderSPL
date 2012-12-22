@@ -29,3 +29,5 @@ Places loading classes (directories) can be specified as a relative path or abso
 
       require './Autoloader.php';
       Autoloader::startAutoload( array('Doctrine'=>'your/path/to/Doctrine') );
+	  // or
+	  Autoloader::startAutoload( array('Doctrine\\ORM'=>'your/path/to/Doctrine') );
